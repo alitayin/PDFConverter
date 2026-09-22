@@ -1,0 +1,41 @@
+# macOS Finder metadata, including AppleDouble files on external volumes
+.DS_Store
+._*
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+*.tsbuildinfo
+electron/.generated/
+electron/bin/
+dist-electron/
+.playwright-cli/
+output/
+
+# Rust / Tauri
+target/
+src-tauri/target/
+src-tauri/gen/
+
+# Local build and secrets
+.env
+.env.*
+!.env.example
+dist/
+release/
+*.log
+
+# Local release reports are reproducible and regenerated from lockfiles.
+!release/.keep
+
+# Keep the public repository focused on the application. Development notes,
+# handoff records, and experiments remain local and are not release inputs.
+*.md
+!README.md
+!NOTICE.md
+docs/
+AGENTS.md
+HANDOFF.md
+workers/
+experiments/

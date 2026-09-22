@@ -1,0 +1,217 @@
+name: release-gates
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+      - '!v*-dev'
+
+permissions:
+  contents: read
+
+jobs:
+  macos-universal:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install pinned Rust toolchain and Tauri CLI
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin --toolchain 1.88.0
+          cargo install tauri-cli --version 2.11.4 --locked
+          cargo tauri --version
+      - name: Check Apple signing inputs
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          test -n "$APPLE_CERTIFICATE"
+          test -n "$APPLE_CERTIFICATE_PASSWORD"
+          test -n "$APPLE_SIGNING_IDENTITY"
+          test -n "$APPLE_ID"
+          test -n "$APPLE_PASSWORD"
+          test -n "$APPLE_TEAM_ID"
+      - name: Verify release gates and issuer sample
+        env:
+          MPC_ISSUER_PUBLIC_KEY_HEX: ${{ secrets.MPC_ISSUER_PUBLIC_KEY_HEX }}
+          MPC_ISSUER_TEST_TOKEN: ${{ secrets.MPC_ISSUER_TEST_TOKEN }}
+          RELEASE_STRICT: '1'
+        run: ./scripts/verify-release.sh
+      - name: Import Developer ID certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.APPLE_CERTIFICATE }}
+          p12-password: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      - name: Build universal DMG
+        env:
+          RELEASE_STRICT: '1'
+          MPC_ISSUER_PUBLIC_KEY_HEX: ${{ secrets.MPC_ISSUER_PUBLIC_KEY_HEX }}
+          MPC_ISSUER_TEST_TOKEN: ${{ secrets.MPC_ISSUER_TEST_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CARGO_BUILD_JOBS: 2
+        run: |
+          test -n "$MPC_ISSUER_PUBLIC_KEY_HEX"
+          ./scripts/build-macos-universal.sh
+          RELEASE_STRICT=1 node scripts/verify-release-artifact.mjs src-tauri/target/universal-apple-darwin/release/bundle/macos/极简\ PDF\ 转换器.app
+      - name: Notarize and verify macOS DMG
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          RELEASE_STRICT: '1'
+        run: |
+          app="src-tauri/target/universal-apple-darwin/release/bundle/macos/极简 PDF 转换器.app"
+          dmg="src-tauri/target/universal-apple-darwin/release/bundle/dmg/极简 PDF 转换器_$(<VERSION)_universal.dmg"
+          test -d "$app"
+          test -f "$dmg"
+          xcrun stapler validate "$app"
+          xcrun notarytool submit "$dmg" --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" --team-id "$APPLE_TEAM_ID" --wait
+          xcrun stapler staple "$dmg"
+          xcrun stapler validate "$dmg"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --verify --strict --verbose=2 "$app/Contents/MacOS/pdf_to_txt_worker"
+          codesign --verify --verbose=2 "$dmg"
+          node scripts/macos-dmg-smoke.mjs "$dmg" --no-launch
+          RELEASE_OUTPUT_DIR="release/$(<VERSION)/darwin-universal-app" node scripts/generate-release-manifest.mjs --artifact "$app"
+          RELEASE_OUTPUT_DIR="release/$(<VERSION)/darwin-universal-dmg" node scripts/generate-release-manifest.mjs --artifact "$dmg"
+      - name: Upload macOS packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: minimal-pdf-converter-macos-universal
+          path: |
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
+            release/**
+          if-no-files-found: error
+
+  windows-x64:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install pinned Rust toolchain and Tauri CLI
+        run: |
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt
+          rustup target add x86_64-pc-windows-msvc --toolchain 1.88.0
+          cargo install tauri-cli --version 2.11.4 --locked
+          cargo tauri --version
+      - name: Check Windows signing inputs
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+        run: |
+          $thumbprint = $env:WINDOWS_CERTIFICATE_THUMBPRINT -replace '\s', ''
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PFX_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD) -or
+              $thumbprint -notmatch '^[0-9a-fA-F]{40}$' -or
+              $env:WINDOWS_TIMESTAMP_URL -notmatch '^https://') {
+            throw 'Windows PFX, password, 40-character thumbprint, and HTTPS timestamp URL are required'
+          }
+      - name: Verify release issuer sample against Rust client
+        env:
+          MPC_ISSUER_PUBLIC_KEY_HEX: ${{ secrets.MPC_ISSUER_PUBLIC_KEY_HEX }}
+          MPC_ISSUER_TEST_TOKEN: ${{ secrets.MPC_ISSUER_TEST_TOKEN }}
+          RELEASE_STRICT: '1'
+        run: |
+          node scripts/check-license-key.mjs
+          cargo test --locked --manifest-path src-tauri/Cargo.toml --all-targets controlled_issuer_sample_matches_embedded_public_key
+      - name: Check PDF to TXT worker quality baseline
+        run: |
+          cargo build --locked --manifest-path src-tauri/Cargo.toml --bin pdf_to_txt_worker
+          node scripts/quality-smoke.mjs
+          node --test scripts/real-quality-check.test.mjs
+      - name: Import Windows code-signing certificate
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE_PFX_BASE64: ${{ secrets.WINDOWS_CERTIFICATE_PFX_BASE64 }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PFX_BASE64) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_PASSWORD) -or
+              [string]::IsNullOrWhiteSpace($env:WINDOWS_CERTIFICATE_THUMBPRINT)) {
+            throw 'Windows PFX, password, and certificate thumbprint are required'
+          }
+          $expected = ($env:WINDOWS_CERTIFICATE_THUMBPRINT -replace '\s', '').ToUpperInvariant()
+          if ($expected -notmatch '^[0-9A-F]{40}$') {
+            throw 'WINDOWS_CERTIFICATE_THUMBPRINT must be a SHA-1 certificate fingerprint'
+          }
+          $pfx = Join-Path $env:RUNNER_TEMP ([guid]::NewGuid().ToString('N') + '.pfx')
+          try {
+            [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE_PFX_BASE64))
+            $password = ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+            $certificates = @(Import-PfxCertificate -FilePath $pfx -CertStoreLocation Cert:\CurrentUser\My -Password $password -ErrorAction Stop)
+            if (!($certificates | Where-Object { $_.Thumbprint -eq $expected -and $_.HasPrivateKey })) {
+              throw 'Imported Windows certificate does not match the expected thumbprint or lacks a private key'
+            }
+          }
+          finally {
+            Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
+          }
+          Write-Output 'Windows signing certificate imported into CurrentUser/My'
+      - name: Prepare pinned WebView2 fixed runtime
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/fetch-webview2-runtime.ps1 -Destination "$env:GITHUB_WORKSPACE\src-tauri\target\webview2-fixed"
+      - name: Prepare pinned PDFium Windows x64 runtime
+        shell: pwsh
+        run: |
+          pwsh -NoProfile -File scripts/fetch-pdfium-runtime.ps1 -Destination "$env:GITHUB_WORKSPACE\src-tauri\target\pdfium-windows-x64"
+      - name: Verify fixed WebView2 runtime
+        env:
+          WEBVIEW2_FIXED_RUNTIME_DIR: ${{ github.workspace }}\src-tauri\target\webview2-fixed
+          RELEASE_STRICT: '1'
+        run: node scripts/check-windows-runtime.mjs
+      - name: Verify PDFium source and all required licenses
+        env:
+          PDFIUM_RUNTIME_DIR: ${{ github.workspace }}\src-tauri\target\pdfium-windows-x64
+          RELEASE_STRICT: '1'
+        run: node scripts/check-windows-pdfium.mjs source --before-sign
+      - name: Exercise all conversion engines on Windows
+        env:
+          PDFIUM_RUNTIME_DIR: ${{ github.workspace }}\src-tauri\target\pdfium-windows-x64
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml --bin minimal-pdf-converter executes_all_six_conversion_engines_on_local_fixtures
+      - name: Build NSIS and smoke isolated current-user install
+        env:
+          WEBVIEW2_FIXED_RUNTIME_DIR: ${{ github.workspace }}\src-tauri\target\webview2-fixed
+          PDFIUM_RUNTIME_DIR: ${{ github.workspace }}\src-tauri\target\pdfium-windows-x64
+          WINDOWS_CERTIFICATE_THUMBPRINT: ${{ secrets.WINDOWS_CERTIFICATE_THUMBPRINT }}
+          WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+          MPC_ISSUER_PUBLIC_KEY_HEX: ${{ secrets.MPC_ISSUER_PUBLIC_KEY_HEX }}
+          MPC_ISSUER_TEST_TOKEN: ${{ secrets.MPC_ISSUER_TEST_TOKEN }}
+          RELEASE_STRICT: '1'
+        run: node scripts/build-windows-release.mjs
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: minimal-pdf-converter-windows-x64
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            release/**
+          if-no-files-found: error

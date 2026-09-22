@@ -1,0 +1,41 @@
+appId: com.minimalpdf.converter
+productName: Ayst Arc PDF
+asar: true
+directories:
+  output: dist-electron
+files:
+  - out/**/*
+  - electron/*.cjs
+  - package.json
+  - '!node_modules/**/*'
+extraMetadata:
+  main: electron/main.cjs
+mac:
+  category: public.app-category.productivity
+  icon: electron/.generated/icon.png
+  artifactName: MinimalPdfConverter-${version}-${arch}.${ext}
+  extraResources:
+    - from: electron/bin/macos/arm64/bin
+      to: bin
+      filter:
+        - minimal-pdf-converter
+    - from: electron/bin/macos/arm64/office
+      to: office
+dmg:
+  writeUpdateInfo: false
+win:
+  executableName: MinimalPdfConverter
+  icon: public/ayst-arc-mark.png
+  artifactName: MinimalPdfConverter-${version}-${arch}-Setup.${ext}
+  extraResources:
+    - from: electron/bin/windows
+      to: bin
+      filter:
+        - minimal-pdf-converter.exe
+        - pdfium-runtime/**/*
+    - from: electron/bin/windows/office
+      to: office
+nsis:
+  oneClick: true
+  perMachine: false
+  runAfterFinish: false
