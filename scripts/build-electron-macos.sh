@@ -51,7 +51,7 @@ if [[ ! "$available_kib" =~ '^[0-9]+$' || "$available_kib" -lt 5242880 ]]; then
   print -u2 "Electron packaging requires at least 5 GiB free on the repository volume"
   exit 2
 fi
-if ! rustup target list --installed | rg -q '^aarch64-apple-darwin$'; then
+if ! rustup target list --installed | grep -Eq '^aarch64-apple-darwin$'; then
   print -u2 "Missing aarch64-apple-darwin Rust target"
   exit 2
 fi
@@ -127,7 +127,7 @@ verify_official_office() {
   [[ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$candidate/Contents/Info.plist")" == 26.2.6.3 ]] || return 1
   [[ "$(lipo -archs "$candidate/Contents/MacOS/soffice")" == arm64 ]] || return 1
   signature="$(codesign -dv --verbose=4 "$candidate" 2>&1)" || return 1
-  print -r -- "$signature" | rg -q '^TeamIdentifier=7P5S3ZLCN7$' || return 1
+  print -r -- "$signature" | grep -Eq '^TeamIdentifier=7P5S3ZLCN7$' || return 1
   codesign --verify --deep --strict "$candidate"
 }
 verify_background_office() {
