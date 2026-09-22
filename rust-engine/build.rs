@@ -16,5 +16,4 @@ fn main() {
             println!("cargo:rustc-env=MPC_PDFIUM_SIGNED_SHA256={signed_sha256}");
         }
     }
-    tauri_build::build()
 }

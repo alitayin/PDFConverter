@@ -20,10 +20,10 @@ if (workerArg !== -1 && !isAbsolute(args[workerArg + 1])) {
   throw new Error('--worker requires an absolute path');
 }
 const workerPath = resolve(workerArg === -1
-  ? process.env.PDF_TO_TXT_WORKER ?? join(repoRoot, 'src-tauri', 'target', 'debug', binaryName)
+  ? process.env.PDF_TO_TXT_WORKER ?? join(repoRoot, 'rust-engine', 'target', 'debug', binaryName)
   : args[workerArg + 1]);
 if (!existsSync(workerPath)) {
-  throw new Error(`Worker not found: ${workerPath}. Build with cargo build --locked --manifest-path src-tauri/Cargo.toml --bin pdf_to_txt_worker`);
+  throw new Error(`Worker not found: ${workerPath}. Build with cargo build --locked --manifest-path rust-engine/Cargo.toml --bin pdf_to_txt_worker`);
 }
 
 function literal(value) {

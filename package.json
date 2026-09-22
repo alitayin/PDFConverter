@@ -1,6 +1,6 @@
 {
   "name": "minimal-pdf-converter",
-  "version": "0.3.1-dev",
+  "version": "0.3.1",
   "private": true,
   "main": "electron/main.cjs",
   "packageManager": "pnpm@9.15.4",

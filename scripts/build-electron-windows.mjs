@@ -7,7 +7,7 @@ import { inspectPdfiumRuntime, sha256 } from './check-windows-pdfium.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const strict = process.env.RELEASE_STRICT === '1';
-const sourceRuntime = join(root, 'src-tauri', 'target', 'pdfium-windows-x64');
+const sourceRuntime = join(root, 'rust-engine', 'target', 'pdfium-windows-x64');
 const stage = join(root, 'electron', 'bin', 'windows');
 const stageRuntime = join(stage, 'pdfium-runtime');
 const stageOffice = join(stage, 'office');
@@ -192,10 +192,10 @@ function main() {
   const env = { ...process.env };
   if (signedHash) env.MPC_PDFIUM_SIGNED_SHA256 = signedHash;
   else delete env.MPC_PDFIUM_SIGNED_SHA256;
-  run('cargo', ['build', '--locked', '--release', '--target', 'x86_64-pc-windows-msvc', '--manifest-path', 'src-tauri/Cargo.toml', '--bin', 'minimal-pdf-converter'], {
+  run('cargo', ['build', '--locked', '--release', '--target', 'x86_64-pc-windows-msvc', '--manifest-path', 'rust-engine/Cargo.toml', '--bin', 'minimal-pdf-converter'], {
     env, timeout: 1_800_000,
   });
-  const compiled = join(root, 'src-tauri', 'target', 'x86_64-pc-windows-msvc', 'release', engineName);
+  const compiled = join(root, 'rust-engine', 'target', 'x86_64-pc-windows-msvc', 'release', engineName);
   realFile(compiled);
   cpSync(compiled, join(stage, engineName));
   if (signing) {

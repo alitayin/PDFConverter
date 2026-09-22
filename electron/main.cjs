@@ -42,12 +42,12 @@ function enginePath() {
   if (app.isPackaged) return join(process.resourcesPath, 'bin', process.platform === 'win32' ? 'minimal-pdf-converter.exe' : 'minimal-pdf-converter');
   const root = join(__dirname, '..');
   const binary = process.platform === 'win32' ? 'minimal-pdf-converter.exe' : 'minimal-pdf-converter';
-  return process.env.MINIMALPDF_RUST_ENGINE || join(root, 'src-tauri', 'target', 'debug', binary);
+  return process.env.MINIMALPDF_RUST_ENGINE || join(root, 'rust-engine', 'target', 'debug', binary);
 }
 
 function workerPath() {
   const binary = process.platform === 'win32' ? 'pdf_to_txt_worker.exe' : 'pdf_to_txt_worker';
-  const base = app.isPackaged ? join(process.resourcesPath, 'bin') : join(__dirname, '..', 'src-tauri', 'target', 'release');
+  const base = app.isPackaged ? join(process.resourcesPath, 'bin') : join(__dirname, '..', 'rust-engine', 'target', 'release');
   const target = join(base, binary);
   return existsSync(target) ? target : null;
 }

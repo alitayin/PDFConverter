@@ -1,13 +1,10 @@
 [package]
 name = "minimal-pdf-converter"
-version = "0.3.1-dev"
+version = "0.3.1"
 description = "Local-first PDF conversion desktop application"
 authors = ["Minimal PDF Converter"]
 edition = "2021"
 default-run = "minimal-pdf-converter"
-
-[build-dependencies]
-tauri-build = { version = "2.4.1", features = [] }
 
 [dependencies]
 base64 = "=0.22.1"
@@ -24,9 +21,6 @@ ring = "0.17.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 svg2pdf = { version = "=0.13.0", default-features = false, features = ["text"] }
-tauri = { version = "2.8.0", features = [] }
-tauri-plugin-dialog = "2.7.3"
-tauri-plugin-opener = "2.5.5"
 thiserror = "2"
 tiff = { version = "=0.11.3", default-features = false, features = ["deflate", "lzw"] }
 uuid = { version = "1.11", features = ["v4"] }
@@ -39,10 +33,6 @@ foreign-types = "0.5.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 libloading = "=0.7.4"
-
-[features]
-default = ["custom-protocol"]
-custom-protocol = ["tauri/custom-protocol"]
 
 [profile.release]
 codegen-units = 1

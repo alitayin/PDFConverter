@@ -21,7 +21,7 @@ Requires Node.js, pnpm, Rust 1.88, and a local LibreOffice runtime for office co
 
 ```bash
 pnpm install
-cargo build --locked --manifest-path src-tauri/Cargo.toml --bin minimal-pdf-converter
+cargo build --locked --manifest-path rust-engine/Cargo.toml --bin minimal-pdf-converter
 pnpm typecheck
 pnpm build
 pnpm desktop:test
@@ -33,5 +33,7 @@ pnpm desktop:dev
 ## Release boundary
 
 This repository contains source and build scripts. Release packages still require platform-specific office/PDFium runtime assembly, signing, notarization, clean-machine installation, and real-document acceptance. A local development build is not a cross-platform release.
+
+Download the latest macOS and Windows installers from the [GitHub Releases](https://github.com/alitayin/PDFConverter/releases) page. Each tagged release is built by GitHub Actions and includes checksums and the corresponding runtime notices.
 
 The project is MIT licensed. Third-party runtime and dependency licenses and NOTICE obligations follow the inventory shipped in each release package.

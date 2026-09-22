@@ -13,10 +13,10 @@ dist-electron/
 .playwright-cli/
 output/
 
-# Rust / Tauri
+# Rust conversion engine
 target/
-src-tauri/target/
-src-tauri/gen/
+rust-engine/target/
+rust-engine/gen/
 
 # Local build and secrets
 .env

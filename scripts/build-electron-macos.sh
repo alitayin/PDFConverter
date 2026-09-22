@@ -28,6 +28,9 @@ preview_root="$repo_root/dist-electron/previews"
 output_dir="$preview_root/$preview_name"
 app_path="$output_dir/mac-arm64/Ayst Arc PDF.app"
 dmg_path="$output_dir/MinimalPdfConverter-${package_version}-arm64.dmg"
+if [[ ! -e "$repo_root/dist-electron" ]]; then
+  mkdir "$repo_root/dist-electron"
+fi
 if [[ ! -d "$repo_root/dist-electron" || -L "$repo_root/dist-electron" \
   || -L "$preview_root" || ( -e "$preview_root" && ! -d "$preview_root" ) ]]; then
   print -u2 "Electron preview parent must be a real directory"
@@ -152,16 +155,16 @@ if [[ ! -f electron/.generated/icon.png ]]; then
   sips -s format png -z 1024 1024 public/ayst-arc-mark.png --out electron/.generated/icon.png >/dev/null
 fi
 
-engine_binary="$repo_root/src-tauri/target/aarch64-apple-darwin/release/minimal-pdf-converter"
+engine_binary="$repo_root/rust-engine/target/aarch64-apple-darwin/release/minimal-pdf-converter"
 if [[ -n "${MINIMALPDF_PREVIEW_ENGINE:-}" ]]; then
-  engine_binary="$repo_root/src-tauri/target/debug/minimal-pdf-converter"
+  engine_binary="$repo_root/rust-engine/target/debug/minimal-pdf-converter"
   if [[ "$MINIMALPDF_PREVIEW_ENGINE" != "$engine_binary" || ! -f "$engine_binary" || -L "$engine_binary" ]]; then
     print -u2 "Preview engine must be the repository's built debug executable"
     exit 2
   fi
   print "Packaging the prebuilt debug engine for a development preview"
 else
-  cargo build --locked --release --target aarch64-apple-darwin --manifest-path src-tauri/Cargo.toml --bin minimal-pdf-converter
+  cargo build --locked --release --target aarch64-apple-darwin --manifest-path rust-engine/Cargo.toml --bin minimal-pdf-converter
 fi
 
 stage_tmp="$(mktemp -d "$repo_root/electron/bin/macos/.arm64-stage.XXXXXX")"

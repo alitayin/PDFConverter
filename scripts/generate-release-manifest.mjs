@@ -115,7 +115,7 @@ function nodeComponents() {
 }
 
 function parseCargoPackages() {
-  const lockPath = join(root, 'src-tauri', 'Cargo.lock');
+  const lockPath = join(root, 'rust-engine', 'Cargo.lock');
   if (!existsSync(lockPath)) return [];
   const text = readFileSync(lockPath, 'utf8');
   return [...text.matchAll(/\[\[package\]\]\s+name = "([^"]+)"\s+version = "([^"]+)"/g)].map((match) => ({ name: match[1], version: match[2] }));
@@ -148,7 +148,7 @@ function cargoComponents() {
       version,
       license: name === 'minimal-pdf-converter' ? 'SEE-ROOT-LICENSE' : name === 'windows-sys' && version === '0.52.0' ? 'MIT' : cargoLicense(manifest),
       purl: `pkg:cargo/${name}@${version}`,
-      source: 'src-tauri/Cargo.lock',
+      source: 'rust-engine/Cargo.lock',
     };
   });
 }
@@ -164,19 +164,12 @@ function uniqueComponents(components) {
 }
 
 const platformComponents = platform() === 'win32' ? [{
-  type: 'framework',
-  name: 'Microsoft WebView2 Fixed Version Runtime x64',
-  version: '153.0.4234.48',
-  license: 'SEE-MICROSOFT-WEBVIEW2-TERMS',
-  purl: 'pkg:generic/microsoft-webview2-fixed-runtime@153.0.4234.48?arch=x64',
-  source: 'scripts/fetch-webview2-runtime.ps1',
-}, {
   type: 'library',
   name: 'PDFium Windows x64 app-local runtime (bblanchon build)',
   version: '155.0.8057.0',
   license: 'SEE-PDFIUM-BUNDLED-LICENSES',
   purl: 'pkg:generic/pdfium@155.0.8057.0?arch=x64&builder=bblanchon',
-  source: 'docs/adr/0009-windows-pdfium-runtime.md',
+  source: 'scripts/fetch-pdfium-runtime.ps1',
 }] : [];
 const components = uniqueComponents([...nodeComponents(), ...cargoComponents(), ...platformComponents]);
 const unknown = components.filter((component) => component.license === 'UNKNOWN');

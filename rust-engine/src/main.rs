@@ -1,5 +1,3 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs::File;
@@ -8,9 +6,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
-use tauri::Emitter;
-use tauri_plugin_dialog::DialogExt;
-use tauri_plugin_opener::OpenerExt;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -306,8 +301,6 @@ enum AppError {
     OutputPathNotAllowed,
     #[error("The task does not exist or has already ended")]
     JobNotFound,
-    #[error("Repair is not supported on this platform")]
-    RepairUnavailable,
 }
 
 impl AppError {
@@ -326,7 +319,6 @@ impl AppError {
             Self::OutputDirNotFound => "OUTPUT_DIR_NOT_FOUND",
             Self::OutputPathNotAllowed => "OUTPUT_PATH_NOT_ALLOWED",
             Self::JobNotFound => "JOB_NOT_FOUND",
-            Self::RepairUnavailable => "REPAIR_UNAVAILABLE",
         }
     }
 }
@@ -375,11 +367,6 @@ struct DiagnosticComponent {
     id: &'static str,
     sha256: Option<String>,
     status: &'static str,
-}
-
-#[tauri::command]
-fn get_self_check() -> SelfCheck {
-    build_self_check()
 }
 
 fn build_self_check() -> SelfCheck {
@@ -444,11 +431,6 @@ fn build_self_check() -> SelfCheck {
             },
         ],
     }
-}
-
-#[tauri::command]
-fn get_diagnostic_info() -> Result<String, String> {
-    diagnostic_info(None)
 }
 
 fn diagnostic_info(worker_path: Option<&Path>) -> Result<String, String> {
@@ -658,7 +640,6 @@ fn engine_probe_components() -> (bool, bool, bool) {
     (text_ok, docx_ok, image_ok)
 }
 
-#[tauri::command]
 fn inspect_input_files(paths: Vec<String>) -> Result<Vec<InputFileInfo>, String> {
     if paths.is_empty() {
         return Err(AppError::NoInputs.into());
@@ -694,14 +675,6 @@ fn inspect_input_files(paths: Vec<String>) -> Result<Vec<InputFileInfo>, String>
         .collect()
 }
 
-#[tauri::command]
-fn start_job(app: tauri::AppHandle, request: StartJobRequest) -> Result<String, String> {
-    let (job_id, _worker) = start_job_with_emitter(request, move |event| {
-        let _ = app.emit("conversion://progress", event);
-    })?;
-    Ok(job_id)
-}
-
 fn start_job_with_emitter(
     request: StartJobRequest,
     mut emit: impl FnMut(worker::WorkerEvent) + Send + 'static,
@@ -729,7 +702,6 @@ fn start_job_with_emitter(
     Ok((job_id, worker))
 }
 
-#[tauri::command]
 fn cancel_job(job_id: String) -> Result<(), String> {
     let registry = cancellation_registry()
         .lock()
@@ -739,84 +711,6 @@ fn cancel_job(job_id: String) -> Result<(), String> {
     };
     cancellation.store(true, Ordering::Release);
     Ok(())
-}
-
-#[tauri::command]
-async fn choose_output_dir(
-    app: tauri::AppHandle,
-    window: tauri::Window,
-) -> Result<Option<String>, String> {
-    let selected = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .set_parent(&window)
-            .blocking_pick_folder()
-    })
-    .await
-    .map_err(|error| format!("OUTPUT_DIR_NOT_FOUND: {error}"))?;
-    selected
-        .map(|path| {
-            path.into_path()
-                .map(|path| path.to_string_lossy().into_owned())
-                .map_err(|error| format!("OUTPUT_DIR_NOT_FOUND: {error}"))
-        })
-        .transpose()
-}
-
-#[tauri::command]
-async fn choose_input_files(
-    app: tauri::AppHandle,
-    window: tauri::Window,
-) -> Result<Vec<String>, String> {
-    let selected = tauri::async_runtime::spawn_blocking(move || {
-        app.dialog()
-            .file()
-            .set_parent(&window)
-            .add_filter(
-                "Supported files",
-                &[
-                    "pdf", "docx", "odt", "rtf", "txt", "pptx", "odp", "xlsx", "ods", "png", "jpg",
-                    "jpeg", "gif", "webp", "tif", "tiff", "doc", "ppt", "md", "markdown",
-                ],
-            )
-            .blocking_pick_files()
-    })
-    .await
-    .map_err(|error| format!("INPUT_NOT_FOUND: {error}"))?;
-    selected
-        .unwrap_or_default()
-        .into_iter()
-        .map(|path| {
-            path.into_path()
-                .map(|path| path.to_string_lossy().into_owned())
-                .map_err(|error| format!("INPUT_NOT_FOUND: {error}"))
-        })
-        .collect()
-}
-
-#[tauri::command]
-fn repair_install() -> Result<(), String> {
-    // All current engines are embedded in the signed application binary.
-    // There is no mutable runtime bundle to repair in this build.
-    Err(AppError::RepairUnavailable.into())
-}
-
-#[tauri::command]
-fn open_path(app: tauri::AppHandle, path: String) -> Result<(), String> {
-    let path = PathBuf::from(path);
-    if !path.is_absolute() || (!path.is_file() && !path.is_dir()) {
-        return Err(AppError::InputNotFound.into());
-    }
-    let canonical = path.canonicalize().map_err(|_| AppError::InputNotFound)?;
-    let directory = if canonical.is_dir() {
-        canonical.as_path()
-    } else {
-        canonical.parent().ok_or(AppError::OutputPathNotAllowed)?
-    };
-    validate_output_dir(directory).map_err(String::from)?;
-    app.opener()
-        .open_path(canonical.to_string_lossy().into_owned(), None::<&str>)
-        .map_err(|error| format!("OUTPUT_OPEN_FAILED: {error}"))
 }
 
 fn validate_request(request: &StartJobRequest) -> Result<(), AppError> {
@@ -2258,22 +2152,8 @@ fn main() {
         }
         return;
     }
-    tauri::Builder::default()
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![
-            get_self_check,
-            get_diagnostic_info,
-            inspect_input_files,
-            start_job,
-            cancel_job,
-            choose_input_files,
-            choose_output_dir,
-            open_path,
-            repair_install
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running minimal PDF converter");
+    eprintln!("Ayst Arc PDF Rust engine expects --electron-bridge");
+    std::process::exit(2);
 }
 
 #[cfg(test)]
