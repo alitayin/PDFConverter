@@ -279,9 +279,19 @@ fn office_executable_for(
 }
 
 pub(crate) fn is_installed() -> bool {
+    let mode = OfficeRuntimeMode::from_value(std::env::var_os("MINIMALPDF_OFFICE_MODE").as_deref());
     let Some(executable) = office_executable() else {
         return false;
     };
+    // The bundled executable has already passed the exact resource-layout and
+    // regular-file checks in `office_executable`.  On Windows, the LibreOffice
+    // launcher may keep `--version` alive while it hands off to the real
+    // process, so probing it here can report a false negative.  Conversion
+    // itself is the authoritative runtime check and always uses an isolated,
+    // headless profile.
+    if matches!(mode, OfficeRuntimeMode::Bundled) {
+        return true;
+    }
     let mut command = Command::new(executable);
     command
         .arg("--version")
