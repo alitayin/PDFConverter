@@ -53,6 +53,9 @@ export function buildWindowsRenderFixture() {
 
 function pixelReport(image) {
   const script = [
+    // Windows PowerShell does not reliably auto-load the drawing assembly;
+    // explicitly load it before resolving Bitmap (especially on hosted CI).
+    "Add-Type -AssemblyName System.Drawing -ErrorAction Stop",
     '$bitmap = [System.Drawing.Bitmap]::new($env:MPC_PDFIUM_IMAGE)',
     'try {',
     '  $w = $bitmap.Width; $h = $bitmap.Height',
