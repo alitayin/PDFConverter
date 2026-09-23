@@ -97,11 +97,17 @@ function checkExistingInstall() {
   });
 }
 
-function stopInstalledProcesses(installDir) {
+function stopInstalledProcesses(installDir, includeOfficeProcesses = false) {
   const script = [
     '$root = [IO.Path]::GetFullPath($env:MPC_SMOKE_INSTALL_DIR).TrimEnd([IO.Path]::DirectorySeparatorChar)',
     '$processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase)) -or ($_.CommandLine -and $_.CommandLine.IndexOf($root, [System.StringComparison]::OrdinalIgnoreCase) -ge 0) })',
     '$processes | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }',
+    ...(includeOfficeProcesses ? [
+      // LibreOffice can keep soffice.bin alive after the bridge exits, and its
+      // command line does not reliably contain the isolated install path.
+      '$officeProcesses = @(Get-Process -Name soffice,soffice.bin -ErrorAction SilentlyContinue)',
+      '$officeProcesses | Stop-Process -Force -ErrorAction SilentlyContinue',
+    ] : []),
   ].join('; ');
   run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
     timeout: 30_000,
@@ -123,7 +129,7 @@ function removeSmokeRoot(smokeRoot, installDir) {
       return;
     } catch (error) {
       if (!['EBUSY', 'EPERM', 'ENOTEMPTY'].includes(error?.code) || Date.now() >= deadline) throw error;
-      stopInstalledProcesses(installDir);
+      stopInstalledProcesses(installDir, true);
       const pause = new Int32Array(new SharedArrayBuffer(4));
       Atomics.wait(pause, 0, 0, 250);
     }
@@ -171,12 +177,12 @@ function smokeInstalledNsis(installer, expectedEngineHash, expectedOfficeHash) {
       // Office and the Rust bridge are normally closed by the integration
       // tests, but Windows can retain an executable handle briefly. Stop only
       // processes launched from this isolated install before invoking NSIS.
-      stopInstalledProcesses(installDir);
+      stopInstalledProcesses(installDir, true);
       const uninstallers = existsSync(installDir) ? readdirSync(installDir)
         .filter((name) => /^Uninstall.*\.exe$/i.test(name)) : [];
       if (uninstallers.length !== 1) throw new Error(`cannot identify isolated NSIS uninstaller; inspect ${smokeRoot}`);
       run(join(installDir, uninstallers[0]), ['/S'], { timeout: 180_000 });
-      stopInstalledProcesses(installDir);
+      stopInstalledProcesses(installDir, true);
       waitForRemoval(installedEngine);
       if (existsSync(installedEngine)) throw new Error(`NSIS uninstaller left engine behind; inspect ${smokeRoot}`);
       uninstalled = true;
