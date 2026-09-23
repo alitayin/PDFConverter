@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inspectPdfiumRuntime, sha256 } from './check-windows-pdfium.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -152,7 +152,17 @@ function smokeInstalledNsis(installer, expectedEngineHash, expectedOfficeHash) {
     realFile(installedEngine);
     if (sha256(installedEngine) !== expectedEngineHash) throw new Error('installed Rust engine differs from the staged signed binary');
     const office = inspectBundledOffice(installedOffice, expectedOfficeHash);
-    run(office.executable, ['--version'], { timeout: 30_000 });
+    // Use an isolated profile for the launcher probe. Without it, a stale
+    // per-user LibreOffice instance can make soffice.exe wait indefinitely on
+    // Windows even though the bundled runtime itself is healthy.
+    const officeProfile = join(smokeRoot, 'office-profile');
+    mkdirSync(officeProfile, { recursive: true });
+    run(office.executable, [
+      '--headless', '--nologo', '--nodefault', '--nofirststartwizard',
+      '--nolockcheck', '--norestore',
+      `-env:UserInstallation=${pathToFileURL(officeProfile).href}`,
+      '--version',
+    ], { timeout: 30_000 });
     if (strict) {
       run('node', ['scripts/verify-windows-artifact.mjs', join(installDir, electronName)]);
       run('node', ['scripts/verify-windows-artifact.mjs', installedEngine]);
