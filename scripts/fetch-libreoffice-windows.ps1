@@ -18,7 +18,11 @@ if (Test-Path -LiteralPath $target) {
 New-Item -ItemType Directory -Force -Path $destinationRoot, $extract | Out-Null
 
 Write-Host "Downloading official LibreOffice $version Windows MSI"
-Invoke-WebRequest -Uri $url -OutFile $msi
+$curl = (Get-Command curl.exe -ErrorAction Stop).Source
+& $curl --fail --location --silent --show-error --retry 5 --retry-all-errors --retry-delay 5 --retry-max-time 900 --connect-timeout 30 --max-time 900 --user-agent 'Ayst Arc PDF release builder' --output $msi $url
+if ($LASTEXITCODE -ne 0) {
+  throw "LibreOffice Windows MSI download failed with curl exit code $LASTEXITCODE"
+}
 if (-not (Test-Path -LiteralPath $msi) -or (Get-Item -LiteralPath $msi).Length -eq 0) {
   throw 'LibreOffice Windows MSI download is missing or empty'
 }
