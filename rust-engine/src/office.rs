@@ -1751,12 +1751,7 @@ fn convert(
         }
         OfficeConversion::PdfToDocx => verify_docx(&converted)?,
         OfficeConversion::PdfToPptx => {
-            let result = preflight_ooxml(OfficeConversion::PptxToPdf, &converted, &mut should_stop);
-            match result {
-                Ok(()) => {}
-                Err(OfficeError::Cancelled) => return Err(OfficeError::Cancelled),
-                Err(_) => return Err(OfficeError::InvalidOutput("PPTX")),
-            }
+            verify_pptx_output(&converted, &mut should_stop)?;
         }
         OfficeConversion::PdfToRtf => verify_rtf(&converted)?,
         OfficeConversion::PdfToFlatOdtXml => {
@@ -1818,6 +1813,87 @@ fn verify_docx(path: &Path) -> Result<(), OfficeError> {
         return Err(OfficeError::InvalidOutput("DOCX"));
     }
     Ok(())
+}
+
+fn verify_pptx_output(
+    path: &Path,
+    should_stop: &mut impl FnMut() -> bool,
+) -> Result<(), OfficeError> {
+    let metadata = fs::symlink_metadata(path).map_err(|_| OfficeError::InvalidOutput("PPTX"))?;
+    if !metadata.file_type().is_file()
+        || is_windows_reparse_point(&metadata)
+        || metadata.len() == 0
+        || metadata.len() > MAX_OFFICE_INPUT_BYTES
+    {
+        return Err(OfficeError::InvalidOutput("PPTX"));
+    }
+    let mut file = File::open(path).map_err(|_| OfficeError::InvalidOutput("PPTX"))?;
+    let mut signature = [0_u8; 4];
+    file.read_exact(&mut signature)
+        .map_err(|_| OfficeError::InvalidOutput("PPTX"))?;
+    if signature != *b"PK\x03\x04" {
+        return Err(OfficeError::InvalidOutput("PPTX"));
+    }
+    file.rewind()
+        .map_err(|_| OfficeError::InvalidOutput("PPTX"))?;
+    let mut archive = ZipArchive::new(file).map_err(|_| OfficeError::InvalidOutput("PPTX"))?;
+    if archive.is_empty() || archive.len() > MAX_ZIP_ENTRIES {
+        return Err(OfficeError::InvalidOutput("PPTX"));
+    }
+    let mut names = HashSet::with_capacity(archive.len());
+    let mut total_uncompressed = 0_u64;
+    let mut has_presentation = false;
+    let mut has_content_types = false;
+    for index in 0..archive.len() {
+        if should_stop() {
+            return Err(OfficeError::Cancelled);
+        }
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|_| OfficeError::InvalidOutput("PPTX"))?;
+        let name = entry.name().to_owned();
+        let path_name = name.strip_suffix('/').unwrap_or(&name);
+        if path_name.is_empty()
+            || path_name.starts_with('/')
+            || path_name.contains(['\\', ':', '\0'])
+            || path_name
+                .split('/')
+                .any(|part| matches!(part, "" | "." | ".."))
+            || !names.insert(name.clone())
+            || entry.encrypted()
+            || entry
+                .unix_mode()
+                .is_some_and(|mode| mode & 0o170000 == 0o120000)
+            || !matches!(
+                entry.compression(),
+                zip::CompressionMethod::Stored | zip::CompressionMethod::Deflated
+            )
+        {
+            return Err(OfficeError::InvalidOutput("PPTX"));
+        }
+        total_uncompressed = total_uncompressed
+            .checked_add(entry.size())
+            .filter(|value| *value <= MAX_TOTAL_UNCOMPRESSED_BYTES)
+            .ok_or(OfficeError::InvalidOutput("PPTX"))?;
+        if name == "ppt/presentation.xml" {
+            has_presentation = true;
+        } else if name == "[Content_Types].xml" {
+            has_content_types = true;
+            let bytes = read_bounded(&mut entry, MAX_RELATIONSHIPS_BYTES as usize, should_stop)
+                .map_err(|error| match error {
+                    OfficeError::Cancelled => OfficeError::Cancelled,
+                    _ => OfficeError::InvalidOutput("PPTX"),
+                })?;
+            if !content_types_are_safe(&bytes).map_err(|_| OfficeError::InvalidOutput("PPTX"))? {
+                return Err(OfficeError::InvalidOutput("PPTX"));
+            }
+        }
+    }
+    if has_presentation && has_content_types {
+        Ok(())
+    } else {
+        Err(OfficeError::InvalidOutput("PPTX"))
+    }
 }
 
 pub(crate) fn verify_rtf(path: &Path) -> Result<(), OfficeError> {
