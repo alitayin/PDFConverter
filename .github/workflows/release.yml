@@ -33,12 +33,12 @@ jobs:
         run: |
           pnpm build
           ./scripts/build-electron-macos.sh
-          node scripts/smoke-electron-macos.mjs "dist-electron/previews/${GITHUB_REF_NAME}/mac-arm64/MinimalPdfConverter-$(<VERSION)-arm64.dmg"
-          shasum -a 256 "dist-electron/previews/${GITHUB_REF_NAME}/mac-arm64/MinimalPdfConverter-$(<VERSION)-arm64.dmg" > "dist-electron/previews/${GITHUB_REF_NAME}/mac-arm64/MinimalPdfConverter-$(<VERSION)-arm64.dmg.sha256"
+          node scripts/smoke-electron-macos.mjs "dist-electron/previews/${GITHUB_REF_NAME}/MinimalPdfConverter-$(<VERSION)-arm64.dmg"
+          shasum -a 256 "dist-electron/previews/${GITHUB_REF_NAME}/MinimalPdfConverter-$(<VERSION)-arm64.dmg" > "dist-electron/previews/${GITHUB_REF_NAME}/MinimalPdfConverter-$(<VERSION)-arm64.dmg.sha256"
       - uses: actions/upload-artifact@v4
         with:
           name: ayst-arc-pdf-macos-arm64
-          path: dist-electron/previews/${{ github.ref_name }}/mac-arm64/MinimalPdfConverter-*-arm64.dmg*
+          path: dist-electron/previews/${{ github.ref_name }}/MinimalPdfConverter-*-arm64.dmg*
           if-no-files-found: error
 
   windows-x64:

@@ -97,6 +97,24 @@ function checkExistingInstall() {
   });
 }
 
+function stopInstalledProcesses(installDir) {
+  const script = [
+    '$root = [IO.Path]::GetFullPath($env:MPC_SMOKE_INSTALL_DIR).TrimEnd([IO.Path]::DirectorySeparatorChar)',
+    '$processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($root, [System.StringComparison]::OrdinalIgnoreCase) })',
+    '$processes | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }',
+  ].join('; ');
+  run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+    timeout: 30_000,
+    env: { ...process.env, MPC_SMOKE_INSTALL_DIR: installDir },
+  });
+}
+
+function waitForRemoval(path, timeoutMs = 30_000) {
+  const deadline = Date.now() + timeoutMs;
+  const pause = new Int32Array(new SharedArrayBuffer(4));
+  while (existsSync(path) && Date.now() < deadline) Atomics.wait(pause, 0, 0, 250);
+}
+
 function smokeInstalledNsis(installer, expectedEngineHash, expectedOfficeHash) {
   checkExistingInstall();
   const smokeRoot = mkdtempSync(join(tmpdir(), 'minimal-pdf-electron-nsis-'));
@@ -135,10 +153,15 @@ function smokeInstalledNsis(installer, expectedEngineHash, expectedOfficeHash) {
     });
   } finally {
     if (installed) {
+      // Office and the Rust bridge are normally closed by the integration
+      // tests, but Windows can retain an executable handle briefly. Stop only
+      // processes launched from this isolated install before invoking NSIS.
+      stopInstalledProcesses(installDir);
       const uninstallers = existsSync(installDir) ? readdirSync(installDir)
         .filter((name) => /^Uninstall.*\.exe$/i.test(name)) : [];
       if (uninstallers.length !== 1) throw new Error(`cannot identify isolated NSIS uninstaller; inspect ${smokeRoot}`);
       run(join(installDir, uninstallers[0]), ['/S'], { timeout: 180_000 });
+      waitForRemoval(installedEngine);
       if (existsSync(installedEngine)) throw new Error(`NSIS uninstaller left engine behind; inspect ${smokeRoot}`);
       uninstalled = true;
     }
